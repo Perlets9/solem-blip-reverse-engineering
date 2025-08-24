@@ -51,7 +51,88 @@ class SolemBLIP:
     def notification_handler(self, sender, data):
         """Handle notifications from the device"""
         if self.__debug:
-            print(f"Notification from {sender}: {binascii.hexlify(data)}")
+            print(f"📨 Notification received:")
+            self._analyze_notification(data)
+    
+    def _analyze_notification(self, data):
+        """Analyze and decode notification data"""
+        if len(data) < 4:
+            print(f"  ⚠️  Short notification: {len(data)} bytes")
+            return
+        
+        hex_data = binascii.hexlify(data).decode()
+        print(f"  📊 Analysis: {hex_data}")
+        
+        # Parse common structure: seems to be 32 10 [STATUS] [DATA...]
+        if len(data) >= 2:
+            prefix = struct.unpack(">H", data[0:2])[0]
+            print(f"  🔸 Prefix: {prefix:04x} ({'3210' if prefix == 0x3210 else '3c10' if prefix == 0x3c10 else 'unknown'})")
+        
+        if len(data) >= 4:
+            status_area = struct.unpack(">H", data[2:4])[0]
+            status_byte = (status_area >> 8) & 0xFF  # First byte of status area
+            sub_status = status_area & 0xFF          # Second byte of status area
+            print(f"  🔸 Status: {status_byte:02x} ({self._decode_status(status_byte)})")
+            print(f"  🔸 Sub-status: {sub_status:02x} ({self._decode_sub_status(sub_status, status_byte)})")
+        
+        # Look for timer values - try different positions
+        if len(data) >= 16:
+            # Try different timer positions
+            timer_area = data[12:16]
+            timer_hex = binascii.hexlify(timer_area).decode()
+            print(f"  ⏱️  Timer area: {timer_hex}")
+            
+            # Try to find the actual timer value (60 = 0x3C)
+            # Let's check multiple positions
+            for i in range(len(data) - 1):
+                if i + 1 < len(data):
+                    potential_timer = struct.unpack(">H", data[i:i+2])[0]
+                    if potential_timer == 60 or potential_timer == 59:  # Look for our 60-second timer or countdown
+                        print(f"  ⏱️  Found timer at position {i}: {potential_timer} seconds ({potential_timer//60}:{potential_timer%60:02d})")
+            
+            # Also try little-endian
+            for i in range(len(data) - 1):
+                if i + 1 < len(data):
+                    potential_timer = struct.unpack("<H", data[i:i+2])[0]
+                    if potential_timer == 60 or potential_timer == 59:
+                        print(f"  ⏱️  Found timer (LE) at position {i}: {potential_timer} seconds ({potential_timer//60}:{potential_timer%60:02d})")
+        
+        # Look for station information
+        if len(data) >= 8:
+            station_area = data[6:8]
+            station_hex = binascii.hexlify(station_area).decode()
+            print(f"  🚿 Station area: {station_hex}")
+        
+        print(f"  📏 Total length: {len(data)} bytes")
+        print()
+    
+    def _decode_status(self, status_byte):
+        """Decode status byte meaning"""
+        status_map = {
+            0x40: "Device idle/dormant",
+            0x41: "All stations mode active", 
+            0x42: "Single station mode active",
+            0x00: "Status packet 3/3 (final)",
+            0x01: "Status packet 2/3 (middle)", 
+            0x02: "Status packet 1/3 (first)"
+        }
+        return status_map.get(status_byte, f"Unknown status: {status_byte:02x}")
+    
+    def _decode_sub_status(self, sub_status, main_status):
+        """Decode sub-status byte meaning based on context"""
+        if main_status == 0x02:  # First packet
+            sub_status_map = {
+                0x40: "Idle mode",
+                0x41: "All stations mode", 
+                0x42: "Single station mode"
+            }
+            return sub_status_map.get(sub_status, f"Unknown mode: {sub_status:02x}")
+        elif main_status == 0x01:  # Middle packet
+            return f"Packet data: {sub_status:02x}"
+        elif main_status == 0x00:  # Final packet
+            return f"Final data: {sub_status:02x}"
+        else:
+            return f"Context unknown: {sub_status:02x}"
     
     async def discover_characteristics(self):
         """Discover and analyze all available characteristics"""
@@ -279,18 +360,19 @@ async def test_protocol_variations(sprinkler):
     # Working commands - confirmed functional!
     commands_to_test = [
         # These commands work directly without needing ON first!
-
-        ("🚿 Station 1, 1min ✅", struct.pack(">HBBBH", 0x3105, 0x12, 0x01, 0x00, 60)),
+        ("🚿 Station 1 ✅", struct.pack(">HBBBH", 0x3105, 0x12, 0x01, 0x00, 60)),
         ("🛑 STOP", struct.pack(">HBHH", 0x3105, 0x15, 0x00ff, 0x0000)),
         
-        # Test below minimum threshold (for documentation)
-        ("🚿 Station 1, 20seconds ❌", struct.pack(">HBBBH", 0x3105, 0x12, 0x01, 0x00, 20)),
-        ("🛑 STOP", struct.pack(">HBHH", 0x3105, 0x15, 0x00ff, 0x0000)),
+        # Leaving these here for reference and future testing
+        # ("🚿 Station 1, 1min ✅", struct.pack(">HBBBH", 0x3105, 0x12, 0x01, 0x00, 60)),
+        # ("🛑 STOP", struct.pack(">HBHH", 0x3105, 0x15, 0x00ff, 0x0000)),
         
-        ("🚿 Station 1, 2min ✅", struct.pack(">HBBBH", 0x3105, 0x12, 0x01, 0x00, 120)),
-        ("🛑 STOP", struct.pack(">HBHH", 0x3105, 0x15, 0x00ff, 0x0000)),
-
+        # # Test below minimum threshold (for documentation)
+        # ("🚿 Station 1, 20seconds ❌", struct.pack(">HBBBH", 0x3105, 0x12, 0x01, 0x00, 20)),
+        # ("🛑 STOP", struct.pack(">HBHH", 0x3105, 0x15, 0x00ff, 0x0000)),
         
+        # ("🚿 Station 1, 2min ✅", struct.pack(">HBBBH", 0x3105, 0x12, 0x01, 0x00, 120)),
+        # ("🛑 STOP", struct.pack(">HBHH", 0x3105, 0x15, 0x00ff, 0x0000)),
 
 
         # Leaving these here for reference and future testing
@@ -358,8 +440,8 @@ async def test_protocol_variations(sprinkler):
             print(f"Error sending {name}: {e}")
         
         print("--- End test ---")
-        print("⏸️  Pausing 3 seconds before next test...")
-        await asyncio.sleep(3)
+        print("⏸️  Pausing 5 seconds before next test...")
+        await asyncio.sleep(5)
 
 async def main():
     """Simple main function for normal usage"""
@@ -424,7 +506,82 @@ async def test_all_functions():
         await sprinkler.disconnect()
         print("Done.")
 
+async def analyze_notifications():
+    """Focused analysis of device notifications and responses"""
+    target_address = "F6618508-5155-1147-CC94-F01E09072AC3"
+    
+    sprinkler = SolemBLIP(target_address)
+    sprinkler._SolemBLIP__debug = True  # Enable debug mode for detailed analysis
+    
+    try:
+        print("=== NOTIFICATION ANALYSIS MODE ===")
+        print("Connecting...")
+        await sprinkler.connect(10)
+        await sprinkler.enableNotifications()
+        print(f"Connected to: {sprinkler.name}")
+        
+        # Test commands specifically to analyze notification patterns
+        test_commands = [
+            ("📊 Idle State Check", None, 5),  # Just wait and see idle notifications
+            ("🚿 1min irrigation START", struct.pack(">HBBBH", 0x3105, 0x12, 0x01, 0x00, 60), 3),
+            ("⏱️  Wait for AUTO-STOP (65 seconds)", None, 65),  # Wait for automatic stop + buffer
+            ("🔍 Status Check After Auto-Stop", struct.pack(">HBHH", 0x3105, 0x15, 0x00ff, 0x0000), 3),  # Send stop to see current state
+            ("📊 Final State Check", None, 5),  # See final state
+        ]
+
+        # Leaving these here for reference and future testing
+        #  ("📊 Idle State Check", None),  # Just wait and see idle notifications
+        # ("🚿 1min irrigation", struct.pack(">HBBBH", 0x3105, 0x12, 0x01, 0x00, 60)),
+        # ("⏱️  Wait 30 seconds", None),  # Monitor countdown
+        # ("🛑 Manual Stop", struct.pack(">HBHH", 0x3105, 0x15, 0x00ff, 0x0000)),
+        # ("📊 Post-stop State", None),  # See what happens after stop
+
+        
+        for name, cmd, wait_time in test_commands:
+            print(f"\n{'='*50}")
+            print(f"🔍 {name}")
+            print(f"{'='*50}")
+            
+            if cmd is None:
+                # Just wait and observe notifications
+                print(f"👁️  Observing notifications for {wait_time} seconds...")
+                if wait_time > 30:
+                    # Show countdown for long waits
+                    for remaining in range(wait_time, 0, -10):
+                        if remaining > 10:
+                            print(f"⏰ {remaining} seconds remaining...")
+                            await asyncio.sleep(10)
+                        else:
+                            print(f"⏰ {remaining} seconds remaining...")
+                            await asyncio.sleep(remaining)
+                            break
+                else:
+                    await asyncio.sleep(wait_time)
+            else:
+                print(f"📤 Sending command: {binascii.hexlify(cmd)}")
+                
+                # Send command
+                await sprinkler.client.write_gatt_char(sprinkler.WRITE_CHARACTERISTIC_UUID, cmd)
+                await asyncio.sleep(2)
+                
+                # Send commit
+                commit_cmd = struct.pack(">H", 0x3b00)
+                print(f"📤 Sending commit: {binascii.hexlify(commit_cmd)}")
+                await sprinkler.client.write_gatt_char(sprinkler.WRITE_CHARACTERISTIC_UUID, commit_cmd)
+                
+                # Wait and observe
+                print(f"👁️  Observing notifications for {wait_time} seconds...")
+                await asyncio.sleep(wait_time)
+        
+    except Exception as e:
+        print(f"Error: {e}")
+    
+    finally:
+        await sprinkler.disconnect()
+        print("Done.")
+
 if __name__ == "__main__":
     # Choose what to run:
-    # asyncio.run(main())              # Normal usage
-    asyncio.run(test_all_functions())  # Test all functions
+    # asyncio.run(main())                 # Normal usage
+    # asyncio.run(test_all_functions())   # Test all functions
+    asyncio.run(analyze_notifications())  # Analyze notifications in detail

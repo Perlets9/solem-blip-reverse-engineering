@@ -174,4 +174,24 @@ These might activate pre-programmed irrigation schedules stored in the device.
 
 This reverse engineering effort revealed that the SOLEM BLIP device operates more directly than originally assumed. The key breakthrough was discovering that **irrigation commands work immediately** without requiring ON/OFF state management. 
 
-The device's internal timer system and real-time countdown responses provide precise irrigation control, making it a reliable system for automated irrigation management. The protocol is simpler than initially thought - direct command execution with automatic timing and state management handled internally by the device.
+## Notification Protocol Mapping
+
+**Critical Discovery**: The device uses a **silent operation mode** during irrigation:
+
+### Notification Behavior
+- **Command-only responses**: Device only sends notifications when receiving commands
+- **No periodic updates**: No heartbeat or countdown notifications during irrigation
+- **Silent auto-stop**: Device stops automatically after programmed time without notification
+- **Triple packet structure**: Every command generates exactly 3 notification packets
+
+### Timer Management
+- **Timer location**: Position 13 in first notification packet contains active timer
+- **Internal countdown**: Device manages timer internally without external communication
+- **Status polling required**: To check current state, must send a command (e.g., stop command)
+
+### Status Codes (Sub-status in first packet)
+- **40**: Idle mode (device stopped/ready)
+- **42**: Single station mode active
+- **41**: All stations mode active (inferred)
+
+The device's internal timer system provides precise irrigation control with automatic shutoff, making it a reliable system for automated irrigation management. The protocol is simpler than initially thought - direct command execution with automatic timing and completely internal state management.
