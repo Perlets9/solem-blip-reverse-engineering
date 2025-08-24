@@ -227,6 +227,83 @@ class SolemBLIP:
         """Stop all watering immediately"""
         cmd = struct.pack(">HBHH", 0x3105, 0x15, 0x00ff, 0x0000)
         await self.__writeCommand(cmd)
+    
+    async def getStatus(self):
+        """Get current device status by sending a non-intrusive command
+        
+        Uses the ON command which doesn't interfere with active irrigation
+        but provides accurate status information.
+        
+        Returns: Dictionary with status information
+        """
+        # Use ON command - it doesn't interfere with active irrigation
+        cmd = struct.pack(">HBHH", 0x3105, 0xa0, 0x0001, 0x0000)
+        
+        # Store the last notification for parsing
+        self._last_notification = None
+        
+        # Temporarily store notification handler
+        original_handler = self.notification_handler
+        
+        def status_handler(sender, data):
+            # Only capture the first notification (main status)
+            if len(data) >= 18 and data[2] == 0x02:  # First packet
+                self._last_notification = data
+        
+        # Replace handler temporarily
+        if self.connected and self.client:
+            await self.client.start_notify(self.NOTIFY_CHARACTERISTIC_UUID, status_handler)
+        
+        # Send command
+        await self.__writeCommand(cmd)
+        
+        # Restore original handler
+        if self.connected and self.client:
+            await self.client.start_notify(self.NOTIFY_CHARACTERISTIC_UUID, original_handler)
+        
+        # Parse the notification
+        if self._last_notification and len(self._last_notification) >= 18:
+            data = self._last_notification
+            sub_status = data[3]  # Sub-status byte
+            timer_bytes = data[13:15]  # Timer at position 13-14
+            timer_remaining = struct.unpack(">H", timer_bytes)[0] if len(timer_bytes) >= 2 else 0
+            
+            # Determine status
+            if sub_status == 0x42:
+                mode = "single_station_active"
+                active = True
+            elif sub_status == 0x41:
+                mode = "all_stations_active" 
+                active = True
+            elif sub_status == 0x40:
+                mode = "idle"
+                active = False
+            elif sub_status == 0x02:
+                mode = "programmed_off"
+                active = False
+            else:
+                mode = f"unknown_{sub_status:02x}"
+                active = False
+            
+            return {
+                "active": active,
+                "mode": mode,
+                "timer_remaining": timer_remaining,
+                "timer_minutes": timer_remaining // 60,
+                "timer_seconds": timer_remaining % 60,
+                "sub_status_code": sub_status,
+                "raw_response": data.hex()
+            }
+        
+        return {
+            "active": False,
+            "mode": "no_response",
+            "timer_remaining": 0,
+            "timer_minutes": 0,
+            "timer_seconds": 0,
+            "sub_status_code": None,
+            "raw_response": None
+        }
 
     async def offDays(self, days):
         """Turn off for specified number of days"""
@@ -520,13 +597,17 @@ async def analyze_notifications():
         await sprinkler.enableNotifications()
         print(f"Connected to: {sprinkler.name}")
         
-        # Test commands specifically to analyze notification patterns
+        # Test different commands for status checking
         test_commands = [
-            ("📊 Idle State Check", None, 5),  # Just wait and see idle notifications
-            ("🚿 1min irrigation START", struct.pack(">HBBBH", 0x3105, 0x12, 0x01, 0x00, 60), 3),
-            ("⏱️  Wait for AUTO-STOP (65 seconds)", None, 65),  # Wait for automatic stop + buffer
-            ("🔍 Status Check After Auto-Stop", struct.pack(">HBHH", 0x3105, 0x15, 0x00ff, 0x0000), 3),  # Send stop to see current state
-            ("📊 Final State Check", None, 5),  # See final state
+            ("🚿 Start 2min irrigation", struct.pack(">HBBBH", 0x3105, 0x12, 0x01, 0x00, 120), 3),
+            ("🔍 Status Check #1 - STOP command", struct.pack(">HBHH", 0x3105, 0x15, 0x00ff, 0x0000), 3),
+            ("⏱️  Wait 10 seconds", None, 10),
+            ("🔍 Status Check #2 - ON command", struct.pack(">HBHH", 0x3105, 0xa0, 0x0001, 0x0000), 3),
+            ("⏱️  Wait 10 seconds", None, 10),
+            ("🔍 Status Check #3 - OFF command", struct.pack(">HBHH", 0x3105, 0xc0, 0x0000, 0x0000), 3),
+            ("⏱️  Wait 10 seconds", None, 10),
+            ("🔍 Status Check #4 - Program command", struct.pack(">HBHH", 0x3105, 0x14, 0x0001, 0x0000), 3),
+            ("🛑 Final STOP", struct.pack(">HBHH", 0x3105, 0x15, 0x00ff, 0x0000), 3),
         ]
 
         # Leaving these here for reference and future testing
@@ -580,8 +661,59 @@ async def analyze_notifications():
         await sprinkler.disconnect()
         print("Done.")
 
+async def test_status_commands():
+    """Test different commands to find the best for status checking"""
+    target_address = "F6618508-5155-1147-CC94-F01E09072AC3"
+    
+    sprinkler = SolemBLIP(target_address)
+    sprinkler._SolemBLIP__debug = True
+    
+    try:
+        print("=== STATUS COMMAND TESTING ===")
+        await sprinkler.connect(10)
+        await sprinkler.enableNotifications()
+        
+        # Start irrigation first
+        print("\n🚿 Starting 2-minute irrigation...")
+        await sprinkler.startWatering(1, 2)
+        await asyncio.sleep(3)
+        
+        # Test different status check commands
+        status_commands = [
+            ("OFF command", struct.pack(">HBHH", 0x3105, 0xc0, 0x0000, 0x0000)),
+            ("ON command", struct.pack(">HBHH", 0x3105, 0xa0, 0x0001, 0x0000)),
+            ("Program command", struct.pack(">HBHH", 0x3105, 0x14, 0x0001, 0x0000)),
+        ]
+        
+        for name, cmd in status_commands:
+            print(f"\n{'='*40}")
+            print(f"🔍 Testing: {name}")
+            print(f"{'='*40}")
+            
+            # Send status check command
+            await sprinkler.client.write_gatt_char(sprinkler.WRITE_CHARACTERISTIC_UUID, cmd)
+            await asyncio.sleep(2)
+            
+            # Send commit
+            commit_cmd = struct.pack(">H", 0x3b00)
+            await sprinkler.client.write_gatt_char(sprinkler.WRITE_CHARACTERISTIC_UUID, commit_cmd)
+            
+            print("⏱️  Waiting 5 seconds to see response...")
+            await asyncio.sleep(5)
+        
+        # Final stop
+        print("\n🛑 Final stop...")
+        await sprinkler.stopWatering()
+        
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        await sprinkler.disconnect()
+        print("Done.")
+
 if __name__ == "__main__":
     # Choose what to run:
     # asyncio.run(main())                 # Normal usage
     # asyncio.run(test_all_functions())   # Test all functions
-    asyncio.run(analyze_notifications())  # Analyze notifications in detail
+    # asyncio.run(analyze_notifications())  # Analyze notifications in detail
+    asyncio.run(test_status_commands())   # Test status checking commands
