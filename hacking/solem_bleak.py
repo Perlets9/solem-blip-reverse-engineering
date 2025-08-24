@@ -5,9 +5,12 @@ SOLEM BLIP Bluetooth LE Controller
 This module provides control over SOLEM BLIP irrigation systems via Bluetooth LE.
 
 CONFIRMED WORKING COMMANDS:
-- startWatering(station, minutes): Water specific station (1-3) for X minutes
-- startWateringAll(minutes): Water all stations for X minutes  
+- startWatering(station, minutes): Water specific station (1-3) for X minutes (min: 1 minute)
+- startWateringAll(minutes): Water all stations for X minutes (min: 1 minute)
 - stopWatering(): Stop all irrigation immediately
+
+IMPORTANT: Device has a minimum irrigation time of 1 minute (60 seconds).
+Commands with shorter durations will be ignored.
 
 USAGE:
 1. Normal usage: python solem_bleak.py
@@ -150,13 +153,25 @@ class SolemBLIP:
         await self.__writeCommand(cmd)
 
     async def startWateringAll(self, minutes):
-        """Start watering all stations for specified minutes - CONFIRMED WORKING"""
+        """Start watering all stations for specified minutes - CONFIRMED WORKING
+        
+        MINIMUM TIME: 1 minute (60 seconds)
+        Commands with less than 1 minute will be ignored by the device.
+        """
+        if minutes < 1:
+            raise ValueError("Minimum irrigation time is 1 minute")
         secs = minutes * 60
         cmd = struct.pack(">HBHH", 0x3105, 0x11, 0x0000, secs)
         await self.__writeCommand(cmd)
 
     async def startWatering(self, station, minutes):
-        """Start watering specific station for specified minutes - CONFIRMED WORKING"""
+        """Start watering specific station for specified minutes - CONFIRMED WORKING
+        
+        MINIMUM TIME: 1 minute (60 seconds)
+        Commands with less than 1 minute will be ignored by the device.
+        """
+        if minutes < 1:
+            raise ValueError("Minimum irrigation time is 1 minute")
         secs = minutes * 60
         cmd = struct.pack(">HBBBH", 0x3105, 0x12, station, 0x00, secs)
         await self.__writeCommand(cmd)
@@ -264,11 +279,17 @@ async def test_protocol_variations(sprinkler):
     # Working commands - confirmed functional!
     commands_to_test = [
         # These commands work directly without needing ON first!
+
+        ("🚿 Station 1, 1min ✅", struct.pack(">HBBBH", 0x3105, 0x12, 0x01, 0x00, 60)),
+        ("🛑 STOP", struct.pack(">HBHH", 0x3105, 0x15, 0x00ff, 0x0000)),
+        
+        # Test below minimum threshold (for documentation)
+        ("🚿 Station 1, 20seconds ❌", struct.pack(">HBBBH", 0x3105, 0x12, 0x01, 0x00, 20)),
+        ("🛑 STOP", struct.pack(">HBHH", 0x3105, 0x15, 0x00ff, 0x0000)),
+        
         ("🚿 Station 1, 2min ✅", struct.pack(">HBBBH", 0x3105, 0x12, 0x01, 0x00, 120)),
         ("🛑 STOP", struct.pack(">HBHH", 0x3105, 0x15, 0x00ff, 0x0000)),
 
-        ("🚿 Station 1, 20seconds ✅", struct.pack(">HBBBH", 0x3105, 0x12, 0x01, 0x00, 20)),
-        ("🛑 STOP", struct.pack(">HBHH", 0x3105, 0x15, 0x00ff, 0x0000)),
         
 
 
@@ -300,11 +321,19 @@ async def test_protocol_variations(sprinkler):
             
             # Calculate real wait time based on command
             wait_time = 10  # Default
+            show_countdown = False
+            
             if "20seconds" in name:
                 wait_time = 25  # 20 seconds + 5 seconds buffer
+                show_countdown = True
                 print("⏱️  Waiting 25 seconds (20s irrigation + 5s buffer)...")
+            elif "1min" in name:
+                wait_time = 65  # 1 minute + 5 seconds buffer
+                show_countdown = True
+                print("⏱️  Waiting 1 minute and 5 seconds (1min irrigation + 5s buffer)...")
             elif "2min" in name:
                 wait_time = 125  # 2 minutes + 5 seconds buffer  
+                show_countdown = True
                 print("⏱️  Waiting 2 minutes and 5 seconds (2min irrigation + 5s buffer)...")
             elif "STOP" in name:
                 wait_time = 3  # Short wait for stop commands
@@ -312,7 +341,18 @@ async def test_protocol_variations(sprinkler):
             else:
                 print("⏱️  Waiting 10 seconds to observe...")
             
-            await asyncio.sleep(wait_time)
+            # Show countdown for longer waits
+            if show_countdown and wait_time > 15:
+                for remaining in range(wait_time, 0, -10):
+                    if remaining > 10:
+                        print(f"⏰ {remaining} seconds remaining...")
+                        await asyncio.sleep(10)
+                    else:
+                        print(f"⏰ {remaining} seconds remaining...")
+                        await asyncio.sleep(remaining)
+                        break
+            else:
+                await asyncio.sleep(wait_time)
             
         except Exception as e:
             print(f"Error sending {name}: {e}")
