@@ -1,0 +1,309 @@
+=== STATUS COMMAND TESTING ===
+Connecting...
+Connected!
+
+=== Discovering Characteristics ===
+
+Service: 108b0001-eab5-bc09-d0ea-0b8f467ce8ee - Unknown
+  Characteristic: 108b0003-eab5-bc09-d0ea-0b8f467ce8ee - Unknown [NOTIFY]
+  Characteristic: 108b0002-eab5-bc09-d0ea-0b8f467ce8ee - Unknown [WRITE, WRITE_NO_RESP]
+
+=== Identifying SOLEM Characteristics ===
+Potential NOTIFY characteristic: 108b0003-eab5-bc09-d0ea-0b8f467ce8ee
+Potential WRITE characteristic: 108b0002-eab5-bc09-d0ea-0b8f467ce8ee
+Notifications enabled
+
+🚿 Starting 2-minute irrigation...
+Sending command: b'31051201000078'
+📨 Notification received:
+  📊 Analysis: 3210024200aaaaaa00015814100078100000
+  🔸 Prefix: 3210 (3210)
+  🔸 Status: 02 (Status packet 1/3 (first))
+  🔸 Sub-status: 42 (Single station mode)
+  ⏱️  Timer area: 10007810
+  🚿 Station area: aaaa
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 321001100000100000100000100000000000
+  🔸 Prefix: 3210 (3210)
+  🔸 Status: 01 (Status packet 2/3 (middle))
+  🔸 Sub-status: 10 (Packet data: 10)
+  ⏱️  Timer area: 10000000
+  🚿 Station area: 1000
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 321000000000000000000000000000000000
+  🔸 Prefix: 3210 (3210)
+  🔸 Status: 00 (Status packet 3/3 (final))
+  🔸 Sub-status: 00 (Final data: 00)
+  ⏱️  Timer area: 00000000
+  🚿 Station area: 0000
+  📏 Total length: 18 bytes
+
+Committing (command: 0x3b00)
+📨 Notification received:
+  📊 Analysis: 3c10024200aaaaaa00015814100078100000
+  🔸 Prefix: 3c10 (3c10)
+  🔸 Status: 02 (Status packet 1/3 (first))
+  🔸 Sub-status: 42 (Single station mode)
+  ⏱️  Timer area: 10007810
+  🚿 Station area: aaaa
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 3c1001100000100000100000100000000000
+  🔸 Prefix: 3c10 (3c10)
+  🔸 Status: 01 (Status packet 2/3 (middle))
+  🔸 Sub-status: 10 (Packet data: 10)
+  ⏱️  Timer area: 10000000
+  🚿 Station area: 1000
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 3c1000000000000000000000000000000000
+  🔸 Prefix: 3c10 (3c10)
+  🔸 Status: 00 (Status packet 3/3 (final))
+  🔸 Sub-status: 00 (Final data: 00)
+  ⏱️  Timer area: 00000000
+  🚿 Station area: 0000
+  📏 Total length: 18 bytes
+
+
+========================================
+🔍 Testing: OFF command
+========================================
+📨 Notification received:
+  📊 Analysis: 321002020000000000015814100076100000
+  🔸 Prefix: 3210 (3210)
+  🔸 Status: 02 (Status packet 1/3 (first))
+  🔸 Sub-status: 02 (Unknown mode: 02)
+  ⏱️  Timer area: 10007610
+  🚿 Station area: 0000
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 321001100000100000100000100000000000
+  🔸 Prefix: 3210 (3210)
+  🔸 Status: 01 (Status packet 2/3 (middle))
+  🔸 Sub-status: 10 (Packet data: 10)
+  ⏱️  Timer area: 10000000
+  🚿 Station area: 1000
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 321000000000000000000000000000000000
+  🔸 Prefix: 3210 (3210)
+  🔸 Status: 00 (Status packet 3/3 (final))
+  🔸 Sub-status: 00 (Final data: 00)
+  ⏱️  Timer area: 00000000
+  🚿 Station area: 0000
+  📏 Total length: 18 bytes
+
+⏱️  Waiting 5 seconds to see response...
+📨 Notification received:
+  📊 Analysis: 3c1002020000000000015814100073100000
+  🔸 Prefix: 3c10 (3c10)
+  🔸 Status: 02 (Status packet 1/3 (first))
+  🔸 Sub-status: 02 (Unknown mode: 02)
+  ⏱️  Timer area: 10007310
+  🚿 Station area: 0000
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 3c1001100000100000100000100000000000
+  🔸 Prefix: 3c10 (3c10)
+  🔸 Status: 01 (Status packet 2/3 (middle))
+  🔸 Sub-status: 10 (Packet data: 10)
+  ⏱️  Timer area: 10000000
+  🚿 Station area: 1000
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 3c1000000000000000000000000000000000
+  🔸 Prefix: 3c10 (3c10)
+  🔸 Status: 00 (Status packet 3/3 (final))
+  🔸 Sub-status: 00 (Final data: 00)
+  ⏱️  Timer area: 00000000
+  🚿 Station area: 0000
+  📏 Total length: 18 bytes
+
+
+========================================
+🔍 Testing: ON command
+========================================
+📨 Notification received:
+  📊 Analysis: 3210024200aaaaaa0001581410006e100000
+  🔸 Prefix: 3210 (3210)
+  🔸 Status: 02 (Status packet 1/3 (first))
+  🔸 Sub-status: 42 (Single station mode)
+  ⏱️  Timer area: 10006e10
+  🚿 Station area: aaaa
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 321001100000100000100000100000000000
+  🔸 Prefix: 3210 (3210)
+  🔸 Status: 01 (Status packet 2/3 (middle))
+  🔸 Sub-status: 10 (Packet data: 10)
+  ⏱️  Timer area: 10000000
+  🚿 Station area: 1000
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 321000000000000000000000000000000000
+  🔸 Prefix: 3210 (3210)
+  🔸 Status: 00 (Status packet 3/3 (final))
+  🔸 Sub-status: 00 (Final data: 00)
+  ⏱️  Timer area: 00000000
+  🚿 Station area: 0000
+  📏 Total length: 18 bytes
+
+⏱️  Waiting 5 seconds to see response...
+📨 Notification received:
+  📊 Analysis: 3c10024200aaaaaa0001581410006c100000
+  🔸 Prefix: 3c10 (3c10)
+  🔸 Status: 02 (Status packet 1/3 (first))
+  🔸 Sub-status: 42 (Single station mode)
+  ⏱️  Timer area: 10006c10
+  🚿 Station area: aaaa
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 3c1001100000100000100000100000000000
+  🔸 Prefix: 3c10 (3c10)
+  🔸 Status: 01 (Status packet 2/3 (middle))
+  🔸 Sub-status: 10 (Packet data: 10)
+  ⏱️  Timer area: 10000000
+  🚿 Station area: 1000
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 3c1000000000000000000000000000000000
+  🔸 Prefix: 3c10 (3c10)
+  🔸 Status: 00 (Status packet 3/3 (final))
+  🔸 Sub-status: 00 (Final data: 00)
+  ⏱️  Timer area: 00000000
+  🚿 Station area: 0000
+  📏 Total length: 18 bytes
+
+
+========================================
+🔍 Testing: Program command
+========================================
+📨 Notification received:
+  📊 Analysis: 3210024000aaaaaa00005814100000100000
+  🔸 Prefix: 3210 (3210)
+  🔸 Status: 02 (Status packet 1/3 (first))
+  🔸 Sub-status: 40 (Idle mode)
+  ⏱️  Timer area: 10000010
+  🚿 Station area: aaaa
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 321001100000100000100000100000000000
+  🔸 Prefix: 3210 (3210)
+  🔸 Status: 01 (Status packet 2/3 (middle))
+  🔸 Sub-status: 10 (Packet data: 10)
+  ⏱️  Timer area: 10000000
+  🚿 Station area: 1000
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 321000000000000000000000000000000000
+  🔸 Prefix: 3210 (3210)
+  🔸 Status: 00 (Status packet 3/3 (final))
+  🔸 Sub-status: 00 (Final data: 00)
+  ⏱️  Timer area: 00000000
+  🚿 Station area: 0000
+  📏 Total length: 18 bytes
+
+⏱️  Waiting 5 seconds to see response...
+📨 Notification received:
+  📊 Analysis: 3c10024000aaaaaa00005814100000100000
+  🔸 Prefix: 3c10 (3c10)
+  🔸 Status: 02 (Status packet 1/3 (first))
+  🔸 Sub-status: 40 (Idle mode)
+  ⏱️  Timer area: 10000010
+  🚿 Station area: aaaa
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 3c1001100000100000100000100000000000
+  🔸 Prefix: 3c10 (3c10)
+  🔸 Status: 01 (Status packet 2/3 (middle))
+  🔸 Sub-status: 10 (Packet data: 10)
+  ⏱️  Timer area: 10000000
+  🚿 Station area: 1000
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 3c1000000000000000000000000000000000
+  🔸 Prefix: 3c10 (3c10)
+  🔸 Status: 00 (Status packet 3/3 (final))
+  🔸 Sub-status: 00 (Final data: 00)
+  ⏱️  Timer area: 00000000
+  🚿 Station area: 0000
+  📏 Total length: 18 bytes
+
+
+🛑 Final stop...
+Sending command: b'31051500ff0000'
+📨 Notification received:
+  📊 Analysis: 3210024000aaaaaa00005814100000100000
+  🔸 Prefix: 3210 (3210)
+  🔸 Status: 02 (Status packet 1/3 (first))
+  🔸 Sub-status: 40 (Idle mode)
+  ⏱️  Timer area: 10000010
+  🚿 Station area: aaaa
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 321001100000100000100000100000000000
+  🔸 Prefix: 3210 (3210)
+  🔸 Status: 01 (Status packet 2/3 (middle))
+  🔸 Sub-status: 10 (Packet data: 10)
+  ⏱️  Timer area: 10000000
+  🚿 Station area: 1000
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 321000000000000000000000000000000000
+  🔸 Prefix: 3210 (3210)
+  🔸 Status: 00 (Status packet 3/3 (final))
+  🔸 Sub-status: 00 (Final data: 00)
+  ⏱️  Timer area: 00000000
+  🚿 Station area: 0000
+  📏 Total length: 18 bytes
+
+Committing (command: 0x3b00)
+📨 Notification received:
+  📊 Analysis: 3c10024000aaaaaa00005814100000100000
+  🔸 Prefix: 3c10 (3c10)
+  🔸 Status: 02 (Status packet 1/3 (first))
+  🔸 Sub-status: 40 (Idle mode)
+  ⏱️  Timer area: 10000010
+  🚿 Station area: aaaa
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 3c1001100000100000100000100000000000
+  🔸 Prefix: 3c10 (3c10)
+  🔸 Status: 01 (Status packet 2/3 (middle))
+  🔸 Sub-status: 10 (Packet data: 10)
+  ⏱️  Timer area: 10000000
+  🚿 Station area: 1000
+  📏 Total length: 18 bytes
+
+📨 Notification received:
+  📊 Analysis: 3c1000000000000000000000000000000000
+  🔸 Prefix: 3c10 (3c10)
+  🔸 Status: 00 (Status packet 3/3 (final))
+  🔸 Sub-status: 00 (Final data: 00)
+  ⏱️  Timer area: 00000000
+  🚿 Station area: 0000
+  📏 Total length: 18 bytes
+
+Notifications disabled
+Done.
