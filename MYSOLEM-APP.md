@@ -4,178 +4,268 @@ This document captures everything we know about the **MySolem Android/iOS app**
 behavior and how it maps to the BL-IP BLE protocol. Used as the planning
 backlog for further reverse engineering and Home Assistant integration work.
 
-> Last updated: 2026-05-25
-> Source: direct observation of the Android app + existing reverse engineering
-> material in `DISCOVERY.md`, `HOME_ASSISTANT_INTEGRATION_GUIDE.md`, `hacking/`.
+> Last updated: 2026-05-25 (after **four** MySolem snoop captures — see
+> [`SNOOP-2026-05-25.md`](./SNOOP-2026-05-25.md),
+> [`SNOOP-2026-05-25-run2.md`](./SNOOP-2026-05-25-run2.md),
+> [`SNOOP-2026-05-25-run3.md`](./SNOOP-2026-05-25-run3.md) and
+> [`SNOOP-2026-05-25-run4.md`](./SNOOP-2026-05-25-run4.md) for raw analysis).
 
 ---
 
 ## 1. What the MySolem app can do
 
 The app talks to a single BL-IP controller via BLE and exposes the following
-features. (Confirmed by user observation on Android.)
+features. Confirmed by user observation on Android + decoded BLE snoop log.
 
 ### 1.1 Programs
 
-The controller stores **up to 3 named programs**. Each program has:
+The controller exposes **3 programs** in the MySolem UI, but the firmware
+actually reserves **12 program slots** (slots 4–12 are zero-padded and
+unused). Each program has:
 
-| Field | Type | Notes |
+| Field | Type | Size | Notes |
+|---|---|---|---|
+| `name` | ASCII string | 16 bytes (null-padded) | Default `"Program A"`, `"Program B"`, `"Program C"` |
+| `water_budget` | uint8 | 1 byte | Percentage (default `0x64`=100, range 0–200%) |
+| `frequency_type` | uint8 | 1 byte | See §1.3 table |
+| `dow_bitmap` | uint8 | 1 byte | Days-of-week bitmap (Custom mode only). `0x7f` = all 7 days otherwise. |
+| `period_days` | uint8 | 1 byte | Used when `frequency_type` is Interval/Weekly etc. |
+| `days_to_next` | uint8 | 1 byte | Days from save time until first firing. Effective "start date" = save_date + days_to_next. |
+| `last_modified` | day/month/year | 4 bytes | When MySolem last wrote the program. NOT the start date. |
+| `start_times` | uint16 × up-to-8 | 16 bytes | **Minutes since midnight**, BE16. Up to 8 per program. Sentinel `0x05a0` for unused slots. *(Decoded in run 2 capture.)* |
+| `station_durations` | uint16-ish | 16 bytes | Per-station duration in seconds, BE16. Position in array indicates which station. Layout still partially decoded. |
+| (schedule via `0x35`) | unknown | — | Returns 24 zero frames in all captures so far. Purpose unclear — might be unrelated to start times. |
+
+### 1.3 Frequency types — confirmed and conjectured
+
+MySolem's "Select frequency" dialog lists 8 modes. Three are confirmed via
+captures, the rest are educated guesses (codes 0..7 plausibly cover all).
+
+| `FREQ_TYPE` | MySolem label | Status | Extra fields |
+|---|---|---|---|
+| `0x00` | Daily | ✅ Confirmed | none |
+| `0x01` | Every 2 days | ❓ Conjecture | `PERIOD=2`? Or simple code? |
+| `0x02` | Every 3 days | ❓ Conjecture | `PERIOD=3`? |
+| `0x03` | Odd days | ✅ Confirmed | Optionally with "Exclude 31st" (encoding unknown) |
+| `0x04` | Weekly / Interval | ✅ Confirmed | `PERIOD` = period in days (7 = "Weekly" UI label) |
+| `0x05` | Even days | ❓ Conjecture | — |
+| `0x06` | Custom | ❓ Conjecture | Uses `DOW_BITMAP` for specific weekdays |
+| `0x07` | (unused?) | ❓ Conjecture | — |
+
+The "Weekly" label is literally `FREQ_TYPE=4, PERIOD=7`. MySolem just shows
+nicer labels when the period matches well-known values.
+
+### 1.2 Station ↔ Program assignment & per-station duration
+
+Each station is bound to **exactly one program**, with a duration that is
+specific to that (station, program) pair.
+
+**Decoded in run 3** — see [`SNOOP-2026-05-25-run3.md`](./SNOOP-2026-05-25-run3.md)
+§1 for the full evidence.
+
+Stored in program-data row 02 (opcode `37 11 02 [SLOT] ...`), 16 bytes:
+
+```
+[STN1:3] [STN2:3] [STN3:3] [STN4:3] [STN5:3] [PAD:1]
+```
+
+Each `STNk` = `[00] [duration_hi] [duration_lo]` (3 bytes, BE16 seconds).
+`00 00 00` means "this station is not assigned to this program".
+
+Up to **5 stations** in this row. BL6IP probably spills into row 03 (always
+zero in BL2IP captures), to be confirmed.
+
+### 1.5 Monthly water budget
+
+Separate from program-level water budget. The controller stores **12 monthly
+multipliers** (Jan..Dec) read/written via opcodes `0x41`/`0x3f`. All-100%
+(`0x0064`) by default.
+
+### 1.6 Information screen (MySolem)
+
+From the user-supplied screenshot of MySolem's "Information" page, the app
+exposes the following metadata about the controller:
+
+| Field | Value (observed) | Source |
 |---|---|---|
-| `frequency` | enum | Daily, every 2 days, every 3 days, ..., specific weekdays |
-| `water_budget` | int (%) | Global multiplier applied to all station durations in the program (e.g. 50% → halves all durations, 150% → 1.5x). Typical SOLEM range 0–200%. |
-| `start_times` | list of HH:MM | N scheduled start times per day (the app allows multiple — exact max TBD) |
+| Default name | `BL2IP-D5AA7E` | `0f 00` read (ASCII at offset 3) |
+| Software version | `5.1.7` | TBD — possibly inside the `0f 00` response trailing bytes, or `0xe3` extended ID |
+| Model | `BL-IP` | Implicit from name prefix |
+| Stations names | "Station 1", "Station 2" | TBD opcode — likely a separate read/write per station |
+| Location | (custom string) | TBD — user-set metadata, app-only or stored on device |
+| Monthly water budgets | 12 values | `0x41` read / `0x3f` write |
+| Backup / Restore | — | Implemented client-side in MySolem (just bulk read/write of the configuration opcodes already known) |
+| Erase programs and durations | — | Likely a `2f`/`37` write batch with zero payloads (the all-zero rows of slots `0x12+` look exactly like this) |
+| **Security key** | (off in this capture) | Application-level auth feature — **not yet mapped**. See §1.5. |
 
-### 1.2 Station ↔ Program assignment
+### 1.7 Security key (NOT mapped)
 
-- Stations are numbered 1..N (N ∈ {1, 2, 4, 6} depending on model).
-- Each station is bound to **exactly one program** (1-to-1 from the station's
-  point of view; a program can drive multiple stations).
-- Each station also has its own **per-program duration** (the watering time
-  that program will run that station for).
+MySolem allows setting a "Security key" on the controller. When enabled,
+the app likely prepends an authentication handshake (probably a known
+opcode with the key as payload) before each control command, and the
+controller rejects writes from clients that don't authenticate.
 
-This is the canonical SOLEM scheduling model: "Program 1 runs daily at 06:00
-and 19:00; station 1 for 10 min, station 2 for 5 min".
+We have **not captured this flow** — the user does not have it enabled. If
+the integration ever encounters a controller with the key set, control
+commands will silently fail until we add support. Documenting it here so
+we don't forget; intentional non-goal for now.
 
-### 1.3 Manual actions (from the app)
+### 1.8 Signal strength (RSSI)
 
-- **Start a single station** with a custom duration (already implemented in
-  Another-Solem as `build_station_command`).
-- **Start all stations** with a custom duration (implemented as
-  `build_all_stations_command`).
-- **Run a program** on demand (NOT implemented in either HA integration).
-- **Stop** (implemented).
+MySolem also displays a Bluetooth signal level indicator. This is **not** an
+opcode in the SOLEM protocol — RSSI is measured by the receiving radio (the
+phone in MySolem's case, or the HA Bluetooth proxy in our case) on every
+advertising packet it sees. **No device interaction required**.
 
-### 1.4 Read-only / status
+In Home Assistant:
+- `BluetoothServiceInfoBleak.rssi` from the discovery cache, or
+- `bluetooth.async_last_service_info(...).rssi` for the latest value.
 
-The app surfaces information that we have **not yet identified** in the
-protocol:
+Implementation cost is ~10 lines (a `SensorEntity` with `device_class:
+signal_strength`, `unit: 'dBm'`, `state_class: measurement`). Doesn't even
+need a BLE connection — it's available even when the device is sleeping but
+still advertising.
 
-- **Battery level** of the controller (BL-IP runs on a 9V battery).
-- **Current configuration** of the 3 programs.
-- **Station → program** mapping.
-- Possibly: next scheduled start, last run timestamp, error/fault flags.
+### 1.9 Manual actions
+
+| Action | Status | Command |
+|---|---|---|
+| Start single station, custom duration | ✅ Confirmed | `31 05 12 [STN] 00 [SEC:BE16]` |
+| Start all stations, custom duration | ✅ Confirmed | `31 05 11 00 00 [SEC:BE16]` |
+| Stop manual watering | ✅ Confirmed | `31 05 15 00 ff 00 00` |
+| Status read | ✅ Confirmed | `3b 00` (the legacy `3105 a0 0001 0000` is NOT required) |
+| **Run program N on demand** | ✅ Confirmed (run 2) | `31 05 14 [N] 00 00 00` — N=1 → Program A, N=2 → Program B, N=3 → Program C |
 
 ---
 
-## 2. Protocol coverage status
+## 2. Protocol opcode table
 
-Cross-reference between MySolem features and the BLE protocol commands we
-have today.
+Frame format: `[OPCODE:1] [LEN:1] [PAYLOAD:LEN]`. Responses use opcode =
+request + 1.
 
-| MySolem feature | Status | Command / Notes |
-|---|---|---|
-| Start station X for Y minutes | ✅ Confirmed | `3105 12 [STN] 00 [SEC_BE16]` |
-| Start all stations for Y minutes | ✅ Confirmed | `3105 11 0000 [SEC_BE16]` |
-| Stop manual watering | ✅ Confirmed | `3105 15 00ff 0000` |
-| Status / countdown polling | ✅ Confirmed | `3105 a0 0001 0000` (returns first of 3 notification packets) |
-| **Run program N on demand** | 🟡 Hypothesis | `3105 14 [PROG_ID] 00 0000` — present in original RE notes (`31051400010000` = "dimi seara" / `31051400020000` = "avarie"). **Not yet tested.** |
-| **Write program config** (freq + budget + start times) | ❌ Unknown | Likely a multi-frame write to a config opcode. Possibly `3105 1x` or `3105 2x` range. |
-| **Read program config** | ❌ Unknown | Probably uses status-like command and parses packets 2 and 3 of the response (which the integration currently discards). |
-| **Assign station → program** | ❌ Unknown | Unknown opcode. May be combined with program write. |
-| **Per-station duration in program** | ❌ Unknown | Likely encoded together with the program config write. |
-| **Battery level** | ❌ Unknown | Not in standard GATT (`0x180F` not exposed). Possibly: a byte inside one of the 3 status packets, or a dedicated command (`3105 ??`), or BLE advertising manufacturer_data. |
-| **Off for N days** (programmed_off) | 🟡 Hypothesis | Original notes: `3105 c0 00 [DAYS] 0000`. State observed (`mode=0x02` after stop). Not user-visible in MySolem? |
+| Req | Resp | Type | Purpose | Implementation status |
+|---|---|---|---|---|
+| `0x0f` | `0x10` | read | Device info (MAC + model name, e.g. `"BL2IP-D5AA7E"`) | Not implemented |
+| `0xe3` | `0xe4` | read | Extended ID / serial | Not implemented |
+| `0xf7` | `0xf8` | read | Flags / unknown (3 bytes, all zero in capture) | Not implemented |
+| `0x03` | `0x04` | write | Set/sync timestamp; byte 3 candidate for battery | Not implemented |
+| `0x31` | `0x32` | write | Start watering / stop (legacy `3105 ...`) | ✅ Implemented |
+| `0x35` | `0x36` | read | All schedule start times (24 frames) | Not implemented |
+| `0x37` | `0x38` | write | Program data row | Not implemented |
+| `0x39` | `0x3a` | read | All programs (12 slots × 7 rows = 84 frames) | Not implemented |
+| `0x3b` | `0x3c` | write | Commit + status refresh (3-packet response) | ✅ Implemented (as the existing commit) |
+| `0x3f` | `0x40` | write | Monthly water budget | Not implemented |
+| `0x41` | `0x42` | read | Monthly water budget | Not implemented |
+| `0x2f` | `0x30` | write | Program name | Not implemented |
 
-Legend: ✅ tested & working — 🟡 partial / untested — ❌ unknown
+## 3. Status notification (the 3-packet response)
 
----
+Every `3b 00` write triggers 3 notifications.
 
-## 3. Status notification structure (recap)
-
-Every command produces **exactly 3 notification packets** of 18 bytes each
-(prefix `3210` for the original write, `3c10` for the commit-driven response).
-
-### Packet 1 (sub-status `0x02`) — current state, timer, mode
+### Packet 1 (sub-status `0x02`) — current state
 
 ```
-3210 02 [MODE] 00 [STN_MASK?] 00 [?]  [?]  [?]  10 [TIMER_BE16] 10 0000
-  0  1  2  3   4  5   6   7  8  9  10 11   12 13 14            16 17
+3c 10 02 [MODE] 00 aa aa aa 00 [STN_ACTIVE] [B0] [B1] 10 [TIMER:BE16] 10 00 00
 ```
 
-- `data[3]` = mode byte: `0x40` idle, `0x41` all stations, `0x42` single
-  station, `0x02` programmed_off.
-- `data[5..7]` = station mask (`aaaaaa` when single/all; `000000` otherwise).
-- `data[13:15]` = remaining seconds (big-endian).
-- `data[10..12]` = constants `58 14 10` in all captures — purpose unknown.
-  *Candidate for battery byte: needs samples at known different battery levels
-  to confirm.*
+- `MODE`: `0x40` idle, `0x41` all stations active, `0x42` single station
+  active, `0x02` programmed-off.
+- `STN_ACTIVE`: `0x00` when idle, `0x01` when a station is running.
+- `B0`, `B1` (bytes 10 and 11): **dynamic** across captures. **Strong
+  candidate for battery level**. See [`SNOOP-2026-05-25.md`](./SNOOP-2026-05-25.md)
+  §4 for evidence.
+- `TIMER:BE16`: remaining seconds on the active timer.
 
 ### Packet 2 (sub-status `0x01`) — UNKNOWN, currently discarded
 
-Captured value (constant across idle / active):
-
-```
-3210 01 10 00 00 10 00 00 10 00 00 10 00 00 10 00 00 00 00 00
-```
-
-Looks like 4 slots of `10 00 00` followed by zeros. Plausible
-interpretations:
-- **Program slots** (3 visible + 1 spare?).
-- **Station configuration** (4 stations × 3-byte record).
-- Hardware/firmware identifier.
+Always `3c 10 01 10 00 00 10 00 00 10 00 00 10 00 00 10 00 00 00 00 00` in
+captures. May contain configuration when programs are active — needs
+captures with running programs.
 
 ### Packet 3 (sub-status `0x00`) — UNKNOWN, currently discarded
 
-Captured value: all zeros.
+Always all zeros in captures.
 
-```
-3210 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-```
+## 4. MySolem session flow (typical)
 
-May contain non-zero content when programs are configured. Need fresh
-captures from a controller that already has programs set up.
+When the app connects, it performs this sequence:
 
----
+1. `0f 00` — read device info (MAC + name).
+2. `e3 00` — read extended ID.
+3. `f7 00` — read flags.
+4. `3b 00` — read status.
+5. `03 06 00 ...` — sync timestamp (phone time → device).
+6. `41 00` — read monthly water budget.
+7. `39 00` — read all 12 program slots (84 frames back).
+8. `35 00` — read all schedules (24 frames back).
 
-## 4. MySolem flows we want to capture
+…then it idles until the user issues an action.
 
-When sniffing the app via Android Bluetooth HCI snoop log, the following
-distinct sequences should be triggered (with several seconds pause between
-each, to keep the log readable):
-
-1. **App opens, connects, shows main page** → likely triggers status + battery
-   read.
-2. **Open program 1 detail screen** → should read full program 1 config.
-3. **Modify program 1**: set frequency = daily, water_budget = 100%, one start
-   at 06:00, station 1 duration = 5 min → save.
-4. **Assign station 2 to program 1**.
-5. **Run program 1 manually** (start button on program screen).
-6. **Stop**.
-7. **Manually start station 2 for 3 min**.
-8. **Stop**.
-9. **Close the app** (look for an explicit goodbye / disconnect handshake).
-
-Each of these should be annotated in the resulting capture analysis.
-
----
+**Important**: this session-start sequence implicitly proves that:
+- The device clock needs to be synced from outside (controller has no NTP).
+- Programs, schedules and budgets are all read in one shot at startup,
+  meaning **MySolem doesn't poll continuously** — it reads once and trusts
+  the cached state.
 
 ## 5. Open questions
 
-- How many `start_times` per program does the app actually allow? (need to
-  poke the UI)
-- Is `water_budget` per-program or global? (initial reading suggests
-  per-program)
-- Does the app ever **read** the battery, or is it only present in BLE
-  advertising data?
-- What happens if a station is left **unassigned**? Does the program write
-  command include an explicit "station N is unused" marker?
-
----
+- **Battery encoding**: byte 10 of status packet 1 is the strongest
+  candidate (was `58` in Aug 2025, `4d` in May 2026 — consistent with
+  battery discharge). Date-sync byte 3 (`0x7e`) is constant across both
+  May captures so likely NOT battery. Needs long-term tracking.
+- **Days-of-week bitmap**: bit-to-day mapping needs a Custom-mode capture
+  with a specific weekday enabled.
+- **What does opcode `0x35` actually return?** It returned 24 all-zero
+  frames in all captures, even with start times configured. Start times
+  live inside `0x39`/`0x3a` records, NOT here.
+- ~~**Station → program assignment**~~ ✅ Decoded in run 3 (see §1.2).
+- ~~**Frequency setting**~~ ✅ Decoded in run 4 (see §1.3). 3 of 8 codes
+  confirmed (`0x00` Daily, `0x03` Odd, `0x04` Interval/Weekly). Remaining
+  codes (Every 2 / Every 3 / Even / Custom) still TBD.
+- **"Exclude 31st" toggle** for Odd-days mode: location in the protocol
+  unknown.
+- **Software version `5.1.7`**: visible in MySolem app but not yet
+  positively identified in any BLE response. Likely inside the `0xe3`
+  extended ID response trailing bytes.
+- **Station names** ("Station 1", "Station 2"): editable from MySolem,
+  but the corresponding write opcode is not yet observed.
+- **Security key**: intentionally not mapped (see §1.5).
 
 ## 6. Action items (live backlog)
 
-- [ ] Add diagnostic logger in Another-Solem HA integration that captures all
-      3 status packets and the BLE advertising `manufacturer_data` /
-      `service_data` (passive intel while waiting for the snoop log).
-- [ ] Implement `run_program` command on the hypothesis `3105 14 N 00 0000`
-      and test it on a real controller. **Low risk** — worst case it does
-      nothing.
-- [ ] Capture MySolem Android Bluetooth HCI snoop log following the flow in
-      §4.
-- [ ] Decode captured log in Wireshark (`btatt` filter, look at the
-      `108b0002` write characteristic and `108b0003` notify characteristic).
-- [ ] Document each newly identified command back into this file.
-- [ ] Add to `protocol.py`: program read/write, battery read.
-- [ ] Add HA entities: battery `sensor`, program `button` (run), program
-      `select` per station, configurable `number`/`time` entities for
-      schedules.
+### Quick wins (can be done with zero or existing data)
+- [ ] **RSSI sensor** — no BLE round-trip needed, reads from HA's discovery
+      cache. Available even when controller is asleep but advertising.
+- [ ] **`run_program` button (1..3)** — `31 05 14 [N] 00 00 00`. Confirmed
+      in run 2 capture.
+- [ ] Patch Another-Solem to use `3b 00` for status (drop `3105 a0 ...`).
+      Simpler, fewer bytes on the air.
+- [ ] Add experimental **battery sensor** reading `status_packet1[10]`,
+      clearly labeled "experimental — needs verification".
+- [ ] Implement `0x39`/`0x3a` reader → expose per-program sensors
+      (`name`, `water_budget`, `active_days`, `durations`, `start_date`).
+- [ ] Implement `0x41`/`0x42` reader → expose monthly budget sensor.
+- [ ] Add a `device.name`, `device.firmware` reading via `0x0f`.
+
+### Needs new captures
+- [ ] Capture: turn on the device, wait a few weeks, capture again →
+      confirm battery byte (status packet 1 byte 10) trend.
+- [ ] Capture: set frequency to **Custom** with only Mon+Wed enabled →
+      decode `DOW_BITMAP` bit ordering AND confirm `FREQ_TYPE` for Custom.
+- [ ] Capture: set frequency to **Every 2 days** → confirm `FREQ_TYPE` code.
+- [ ] Capture: set frequency to **Every 3 days** → confirm `FREQ_TYPE` code.
+- [ ] Capture: set frequency to **Even days** → confirm `FREQ_TYPE` code.
+- [ ] Capture: same Odd-days program with **Exclude 31st toggled OFF** →
+      locate the exclude-31 flag.
+- [x] ~~Capture: assign station 1→Program A, station 2→Program B → finish
+      decoding the station-duration row.~~ ✅ Done in run 3.
+- [x] ~~Capture: set frequency to "every 2 days" → find the frequency
+      encoding.~~ ✅ Done in run 4 (partial: 3/8 codes mapped).
+- [ ] Capture: rename "Station 1" → find the station-name write opcode.
+- [ ] Capture: enable Security key → map authentication handshake.
+
+### Write support (needs careful testing)
+- [ ] Implement `0x2f`/`0x37`/`0x3f` writes to set programs / schedules /
+      budgets from HA.
+- [ ] Add safety: always emit final `3b 00` commit, never write opcode
+      sequences that weren't observed in MySolem captures.

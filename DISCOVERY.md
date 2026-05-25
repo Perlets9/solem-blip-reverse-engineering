@@ -1,5 +1,12 @@
 # SOLEM BLIP Protocol Discoveries
 
+> **Update 2026-05-25**: a full MySolem Android app session was captured and
+> decoded. Many new opcodes (program read/write, schedule read, monthly water
+> budget, device info, timestamp sync) are now documented in
+> [`MYSOLEM-APP.md`](./MYSOLEM-APP.md) and [`SNOOP-2026-05-25.md`](./SNOOP-2026-05-25.md).
+> The information below is the **original** reverse engineering and remains
+> accurate, but is no longer the full picture.
+
 ## Overview
 This document details the discoveries made during the reverse engineering of the SOLEM BLIP irrigation system's Bluetooth Low Energy (BLE) protocol. Through systematic analysis, we uncovered the actual working protocol and discovered significant differences from the original assumptions.
 
