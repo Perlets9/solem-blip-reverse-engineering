@@ -51,7 +51,7 @@ def handleNotifications(per, wait):
 
 per = btle.Peripheral()
 
-#C8:B9:61:06:69:96
+#C8:B9:61:D5:AA:7E
 try:
     bytes = b'0x00'
     per = btle.Peripheral("C8:B9:61:06:69:96", btle.ADDR_TYPE_RANDOM)
