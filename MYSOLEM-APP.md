@@ -4,11 +4,16 @@ This document captures everything we know about the **MySolem Android/iOS app**
 behavior and how it maps to the BL-IP BLE protocol. Used as the planning
 backlog for further reverse engineering and Home Assistant integration work.
 
-> Last updated: 2026-05-25 (after **four** MySolem snoop captures — see
+> Last updated: 2026-05-26 (after **five** MySolem snoop captures — see
 > [`SNOOP-2026-05-25.md`](./SNOOP-2026-05-25.md),
 > [`SNOOP-2026-05-25-run2.md`](./SNOOP-2026-05-25-run2.md),
-> [`SNOOP-2026-05-25-run3.md`](./SNOOP-2026-05-25-run3.md) and
-> [`SNOOP-2026-05-25-run4.md`](./SNOOP-2026-05-25-run4.md) for raw analysis).
+> [`SNOOP-2026-05-25-run3.md`](./SNOOP-2026-05-25-run3.md),
+> [`SNOOP-2026-05-25-run4.md`](./SNOOP-2026-05-25-run4.md) and
+> [`SNOOP-2026-05-26-run5.md`](./SNOOP-2026-05-26-run5.md) for raw analysis).
+>
+> **Status**: protocol reverse engineering for everything MySolem exposes
+> is now considered **complete** apart from the explicit non-goals
+> (battery, Security key, BL6IP layout, station rename).
 
 ---
 
@@ -36,24 +41,24 @@ unused). Each program has:
 | `station_durations` | uint16-ish | 16 bytes | Per-station duration in seconds, BE16. Position in array indicates which station. Layout still partially decoded. |
 | (schedule via `0x35`) | unknown | — | Returns 24 zero frames in all captures so far. Purpose unclear — might be unrelated to start times. |
 
-### 1.3 Frequency types — confirmed and conjectured
+### 1.3 Frequency types — COMPLETE
 
-MySolem's "Select frequency" dialog lists 8 modes. Three are confirmed via
-captures, the rest are educated guesses (codes 0..7 plausibly cover all).
+All 8 MySolem frequency labels map to only 5 distinct firmware codes,
+disambiguated by the other fields:
 
-| `FREQ_TYPE` | MySolem label | Status | Extra fields |
-|---|---|---|---|
-| `0x00` | Daily | ✅ Confirmed | none |
-| `0x01` | Every 2 days | ❓ Conjecture | `PERIOD=2`? Or simple code? |
-| `0x02` | Every 3 days | ❓ Conjecture | `PERIOD=3`? |
-| `0x03` | Odd days | ✅ Confirmed | Optionally with "Exclude 31st" (encoding unknown) |
-| `0x04` | Weekly / Interval | ✅ Confirmed | `PERIOD` = period in days (7 = "Weekly" UI label) |
-| `0x05` | Even days | ❓ Conjecture | — |
-| `0x06` | Custom | ❓ Conjecture | Uses `DOW_BITMAP` for specific weekdays |
-| `0x07` | (unused?) | ❓ Conjecture | — |
+| `FREQ_TYPE` (byte 4) | MySolem labels | How to detect each label |
+|---|---|---|
+| `0x00` | **Daily** or **Custom** | If `DOW_BITMAP = 0x7f` → Daily, otherwise Custom (and the bitmap tells you which weekdays) |
+| `0x01` | **Even days** | — |
+| `0x02` | **Odd days** (Exclude 31st OFF) | — |
+| `0x03` | **Odd days** (Exclude 31st ON) | Same UI label as `0x02`, differs only by toggle |
+| `0x04` | **Every 2 days** / **Every 3 days** / **Weekly** / **Interval** | `PERIOD` in byte 6: 2/3 → "Every N days", 7 → "Weekly", anything else → "Interval" |
 
-The "Weekly" label is literally `FREQ_TYPE=4, PERIOD=7`. MySolem just shows
-nicer labels when the period matches well-known values.
+DOW_BITMAP bit ordering: **bit 0 = Monday, bit 6 = Sunday** (ISO-like).
+`0x7f` = all 7 days.
+
+The "Exclude 31st" toggle is encoded as a separate top-level code (`0x02`
+vs `0x03`), not as a bit flag.
 
 ### 1.2 Station ↔ Program assignment & per-station duration
 
@@ -213,17 +218,15 @@ When the app connects, it performs this sequence:
   candidate (was `58` in Aug 2025, `4d` in May 2026 — consistent with
   battery discharge). Date-sync byte 3 (`0x7e`) is constant across both
   May captures so likely NOT battery. Needs long-term tracking.
-- **Days-of-week bitmap**: bit-to-day mapping needs a Custom-mode capture
-  with a specific weekday enabled.
+- ~~**Days-of-week bitmap**~~ ✅ Decoded in run 5 (bit 0 = Monday).
 - **What does opcode `0x35` actually return?** It returned 24 all-zero
-  frames in all captures, even with start times configured. Start times
-  live inside `0x39`/`0x3a` records, NOT here.
+  frames in all 5 captures, even with start times configured. Start times
+  live inside `0x39`/`0x3a` records, NOT here. Function still unknown
+  but not needed for the integration.
 - ~~**Station → program assignment**~~ ✅ Decoded in run 3 (see §1.2).
-- ~~**Frequency setting**~~ ✅ Decoded in run 4 (see §1.3). 3 of 8 codes
-  confirmed (`0x00` Daily, `0x03` Odd, `0x04` Interval/Weekly). Remaining
-  codes (Every 2 / Every 3 / Even / Custom) still TBD.
-- **"Exclude 31st" toggle** for Odd-days mode: location in the protocol
-  unknown.
+- ~~**Frequency setting**~~ ✅ Fully decoded in run 5 (see §1.3).
+- ~~**"Exclude 31st" toggle**~~ ✅ Decoded in run 5: `FREQ_TYPE` switches
+  between `0x02` (OFF) and `0x03` (ON).
 - **Software version `5.1.7`**: visible in MySolem app but not yet
   positively identified in any BLE response. Likely inside the `0xe3`
   extended ID response trailing bytes.
@@ -247,22 +250,20 @@ When the app connects, it performs this sequence:
 - [ ] Implement `0x41`/`0x42` reader → expose monthly budget sensor.
 - [ ] Add a `device.name`, `device.firmware` reading via `0x0f`.
 
-### Needs new captures
-- [ ] Capture: turn on the device, wait a few weeks, capture again →
-      confirm battery byte (status packet 1 byte 10) trend.
-- [ ] Capture: set frequency to **Custom** with only Mon+Wed enabled →
-      decode `DOW_BITMAP` bit ordering AND confirm `FREQ_TYPE` for Custom.
-- [ ] Capture: set frequency to **Every 2 days** → confirm `FREQ_TYPE` code.
-- [ ] Capture: set frequency to **Every 3 days** → confirm `FREQ_TYPE` code.
-- [ ] Capture: set frequency to **Even days** → confirm `FREQ_TYPE` code.
-- [ ] Capture: same Odd-days program with **Exclude 31st toggled OFF** →
-      locate the exclude-31 flag.
-- [x] ~~Capture: assign station 1→Program A, station 2→Program B → finish
-      decoding the station-duration row.~~ ✅ Done in run 3.
-- [x] ~~Capture: set frequency to "every 2 days" → find the frequency
-      encoding.~~ ✅ Done in run 4 (partial: 3/8 codes mapped).
+### Needs new captures (low priority — none required for MVP)
+- [ ] Wait a few weeks, capture again → confirm battery byte
+      (`status_packet1[10]`) discharge trend.
+- [ ] Capture from a **BL6IP** device (6 stations) → confirm row 03
+      layout for stations 5–6.
 - [ ] Capture: rename "Station 1" → find the station-name write opcode.
 - [ ] Capture: enable Security key → map authentication handshake.
+
+### Captures already done ✅
+- [x] ~~Assign station 1→Program A, station 2→Program B~~ run 3
+- [x] ~~Set various frequencies~~ runs 4 + 5
+- [x] ~~Custom mode with specific weekdays~~ run 5
+- [x] ~~Even days / Odd days / Exclude 31st toggle~~ run 5
+- [x] ~~Multiple intervals (every 4, 10, 30 days)~~ runs 4 + 5
 
 ### Write support (needs careful testing)
 - [ ] Implement `0x2f`/`0x37`/`0x3f` writes to set programs / schedules /
