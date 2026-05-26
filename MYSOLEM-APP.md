@@ -139,7 +139,7 @@ still advertising.
 | Start all stations, custom duration | ✅ Confirmed | `31 05 11 00 00 [SEC:BE16]` |
 | Stop manual watering | ✅ Confirmed | `31 05 15 00 ff 00 00` |
 | Status read | ✅ Confirmed | `3b 00` (the legacy `3105 a0 0001 0000` is NOT required) |
-| **Run program N on demand** | ✅ Confirmed (run 2) | `31 05 14 [N] 00 00 00` — N=1 → Program A, N=2 → Program B, N=3 → Program C |
+| **Run program N on demand** | ✅ Confirmed (run 2, byte-level via tshark) | `31 05 14 00 0N 00 00` — N at byte 4 (BE16). 1 → A, 2 → B, 3 → C |
 
 ---
 
